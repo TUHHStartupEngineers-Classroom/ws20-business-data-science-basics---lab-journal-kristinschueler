@@ -1,6 +1,6 @@
 ---
 title: "Journal (reproducible report)"
-author: "Joschka Schwarz"
+author: "Kristin Schüler"
 date: "2020-11-05"
 output:
   html_document:
@@ -16,39 +16,685 @@ output:
 knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
 ```
 
-**IMPORTANT:** You can delete everything in here and start fresh. You might want to start by not deleting anything above this line until you know what that stuff is doing.
+# First challenge - Sales data analysis 
+Date: 2020-28-11
+Data Science Basic - WiSe 2020/21  
 
-This is an `.Rmd` file. It is plain text with special features. Any time you write just like this, it will be compiled to normal text in the website. If you put a \# in front of your text, it will create a top level-header.
+## Preperation
 
-# My first post
-
-Last compiled: `r Sys.Date()`
-
-Notice that whatever you define as a top level header, automatically gets put into the table of contents bar on the left. 
-
-## Second level header
-
-You can add more headers by adding more hashtags. These won't be put into the table of contents
-
-### third level header
-
-Here's an even lower level header
-
-# My second post (note the order)
-
-Last compiled: `r Sys.Date()`
-
-I'm writing this tutorial going from the top down. And, this is how it will be printed. So, notice the second post is second in the list. If you want your most recent post to be at the top, then make a new post starting at the top. If you want the oldest first, do, then keep adding to the bottom
-
-# Adding R stuff
-
-So far this is just a blog where you can write in plain text and serve your writing to a webpage. One of the main purposes of this lab journal is to record your progress learning R. The reason I am asking you to use this process is because you can both make a website, and a lab journal, and learn R all in R-studio. This makes everything really convenient and in the same place. 
-
-So, let's say you are learning how to make a histogram in R. For example, maybe you want to sample 100 numbers from a normal distribution with mean = 0, and standard deviation = 1, and then you want to plot a histogram. You can do this right here by using an r code block, like this:
+### Clear the environment and load packages 
 
 ```{r}
-samples <- rnorm(100, mean=0, sd=1)
-hist(samples)
+rm(list=ls())#Clear list
+#install.packages("lubridate") #installed the packeges once in the beginning
+#install.packages("writexl")
+
+####Load libraries
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(writexl)
+library(ggplot2)
+library(scales)
+library(knitr)
 ```
 
-When you knit this R Markdown document, you will see that the histogram is printed to the page, along with the R code. This document can be set up to hide the R code in the webpage, just delete the comment (hashtag) from the cold folding option in the yaml header up top. For purposes of letting yourself see the code, and me see the code, best to keep it the way that it is. You'll learn that all of these things and more can be customized in each R code block.
+### Importing Files
+
+```{r}
+Bikes<-read_excel("C:/Users/Kristin/Documents/Working directory/00_data/01_bike_sales/01_raw_data/bikes.xlsx")
+Bikeshops<-read_excel("C:/Users/Kristin/Documents/Working directory/00_data/01_bike_sales/01_raw_data/bikeshops.xlsx")
+Orderlines<-read_excel("C:/Users/Kristin/Documents/Working directory/00_data/01_bike_sales/01_raw_data/orderlines.xlsx")
+```
+
+### Joining Data
+
+```{r}
+Summary_table2 <- Orderlines %>% left_join(Bikes, by = c("product.id" = "bike.id"))%>% left_join(Bikeshops, by = c("customer.id" = "bikeshop.id"))
+glimpse(Summary_table2, eval=TRUE)
+```
+
+## Wrangling and shortening Data
+
+### Wrangling data
+
+```{r}
+wrangled_table2<-Summary_table2 %>% 
+  separate(col = location, into = c("city", "state_of_sale"),sep = ", ", convert = T) %>% 
+  mutate(Total_Amount = quantity*price)%>% 
+  select(contains("order"), contains("model"), contains("category"),price, quantity, Total_Amount, everything())%>%  
+  rename(bikeshop = name) %>%set_names(names(.) %>% str_replace_all("\\.", "_"))
+glimpse(wrangled_table2, eval=TRUE)
+```
+
+### Rearranging and shortening wrangled Data
+
+```{r}
+Short_table2<-wrangled_table2%>%  select(order_id, order_date, city, state_of_sale, price, quantity, Total_Amount)
+glimpse(Short_table2, eval=TRUE)
+```
+
+## Business Insights
+
+### Sales by Location
+
+#### Step 1 - Manipulate
+
+```{r}
+sales_by_Location<- Short_table2%>%  
+  select(state_of_sale, Total_Amount)%>%
+  group_by(state_of_sale)%>% 
+  summarize(sales = sum(Total_Amount))%>% 
+  mutate(sales_in_Euro = scales::dollar(sales, big.mark = ".", 
+                                        decimal.mark = ",", 
+                                        prefix = "", 
+                                        suffix = " €"))
+glimpse(sales_by_Location, eval=TRUE)
+```
+
+#### Step 2 - Visualize
+
+```{r, fig.width=10, fig.height=10}
+sales_by_Location%>%
+  ggplot(aes(x = state_of_sale, y = sales)) +
+  geom_col(fill = "blue") + 
+  geom_label(aes(label = sales_in_Euro)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) + #adjusting to Euros
+  labs(title = "Revenue of bike sales by location",
+       subtitle = "Bike stores available in 12 states",
+       x = "", y = "Revenue")
+```
+
+### Sales by Year and Location
+
+##### Step 1 - Manipulate
+
+```{r}
+sales_year_Location<- Short_table2%>%  
+  select(order_date, Total_Amount, state_of_sale)%>%
+  mutate(year=year(order_date))%>%
+  group_by(year, state_of_sale)%>% 
+  summarize(sales = sum(Total_Amount))%>% 
+  ungroup() %>%
+  mutate(sales_in_Euro = scales::dollar(sales, big.mark = ".", 
+                                        decimal.mark = ",", 
+                                        prefix = "", 
+                                        suffix = " €"))
+glimpse(sales_year_Location, eval=TRUE)
+```
+
+#### Step 2 - Visualize
+
+```{r, fig.width=10, fig.height=10}
+sales_year_Location%>%
+  ggplot(aes(x = year, y = sales, fill = state_of_sale)) +
+  geom_col() + 
+  facet_wrap(~ state_of_sale) +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_y_continuous(labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  labs(title = "Trend of bike sale in 12 states of Germany",
+       subtitle = "Overall positive trends - North Rhine-Westphalia with most revenues",
+       fill = "State")
+```
+
+## Writing Files 
+
+### Excel
+
+```{r}
+wrangled_table2 %>%
+  write_xlsx("C:/Users/Kristin/Documents/Working directory/00_data/01_bike_sales/02_wrangled_data/bike_orderlines_wrangled2.xlsx")
+```
+
+### CSV
+
+```{r}
+wrangled_table2 %>% 
+  write_csv("C:/Users/Kristin/Documents/Working directory/00_data/01_bike_sales/02_wrangled_data/bike_orderlines_wrangled2.csv")
+```
+
+### RDS
+
+```{r}
+wrangled_table2 %>% 
+  write_rds("C:/Users/Kristin/Documents/Working directory/00_data/01_bike_sales/02_wrangled_data/bike_orderlines_wrangled2.rds")
+```
+
+# Second Challenge - Data Acquisition 
+
+```{r results = 'asis'}
+rm(list=ls())#Clear list
+library(httr)
+library(jsonlite)
+library(glue)
+library(rvest)
+```
+
+#### Function to get easily API pathes
+```{r}
+sw_api_path <- function(path) {
+  url <- paste("https://api.openbrewerydb.org/breweries",{path}, sep="")
+  print(url)
+  resp <- GET(url)
+  print(resp)
+  return (stop_for_status(resp))
+}
+resp <- sw_api_path('?by_city=hamburg')
+```
+
+```{r results = 'asis'}
+Data<-resp %>%
+  .$content %>%
+  rawToChar() %>%
+  fromJSON()%>%
+  as_tibble()%>%
+  glimpse(eval=T)
+
+Data$id
+Data$name
+Data$brewery_type
+```
+
+## Task 2: Bike scraping
+
+### Preparation
+```{r}
+rm(list=ls())#Clear list
+library(httr)
+library(jsonlite)
+library(glue)
+library(rvest)
+library(tidyverse)
+library(knitr)
+```
+
+### Data collection
+```{r}
+get_bikes_data <- function(resp){
+  all_bikes <- data_frame()
+  l <- resp %>%
+    read_html() %>%
+    html_nodes(css = "body > div > main > catalog-category-bikes-level-2 > catalog-category-bikes > div") %>%
+    length()
+  
+  vec <- seq(2, l, by=2)
+  
+  for (i in vec) {
+    
+    bikes <- resp %>%
+      read_html() %>%
+      html_nodes(css = paste("body > div > main > catalog-category-bikes-level-2 > catalog-category-bikes > div:nth-child(",i,") > div > ul > li", sep="")) %>%
+      map_df(~{
+        tibble(
+          name = html_node(.x, "div > div > div.catalog-category-bikes__title > span") %>% html_text(trim=TRUE),
+          price = html_node(.x, "div > div > div.catalog-category-bikes__price > div.catalog-category-bikes__price-title") %>% html_text(trim=TRUE) %>% str_remove(pattern = "ab ")
+        )
+      })
+    
+    all_bikes <- rbind(all_bikes, bikes)
+  }
+  return(all_bikes)
+}
+```
+
+### visualisation
+```{r results = 'asis'}
+url <- "https://www.rosebikes.de/fahrr%C3%A4der/rennrad"
+resp <- GET(url)
+bikesRenn <- get_bikes_data(resp)
+
+knitr::kable(
+  head(bikesRenn[,],10), booktabs = TRUE,
+  caption = 'Road bikes'
+)
+
+url <- "https://www.rosebikes.de/fahrr%C3%A4der/Gravel"
+resp <- GET(url)
+bikesGravel <- get_bikes_data(resp)
+
+knitr::kable(
+  head(bikesGravel[,],10), booktabs = TRUE,
+  caption = 'Gravel bikes'
+)
+```
+
+# Third Challenge - Data Wrangling 
+
+## Preparation 
+
+### Loading Libraries and packages, clear list 
+
+```{r}
+rm(list=ls())#Clear list
+#install.packages("vroom")
+#install.packages("tictoc")
+#install.packages("stargazer")
+library(tidyverse)
+library(vroom)
+library(data.table)
+library(tictoc)
+library(knitr)
+```
+
+### Loading and Importing patent data 
+
+```{r}
+col_types_patent <- list(
+  id                        = col_character(), #patent_id
+  type                      = col_skip(), #not needed
+  number                    = col_skip(), #not needed
+  country                   = col_skip(), #not needed
+  date                      = col_date("%Y-%m-%d"),
+  abstract                  = col_skip(), #not needed
+  title                     = col_skip(), #not needed
+  kind                      = col_skip(), #not needed
+  num_claims                = col_skip(), #not needed
+  filename                  = col_skip(), #not needed
+  withdrawn                 = col_skip()  #not needed
+)
+patent_table <- vroom(
+  file       = "E:/Uni Hamburg/DataScience/patent.tsv/patent.tsv", 
+  delim      = "\t", 
+  col_types  = col_types_patent,
+  na         = c("", "NA", "NULL")
+)
+# Rename id to patent_id
+setnames(patent_table, "id", "patent_id")
+glimpse(patent_table, eval = TRUE)
+```
+
+### Loading and importing Patent_assignee data
+
+```{r}
+col_types_patent_assignee <- list(
+  patent_id                 = col_character(),
+  assignee_id               = col_character(),
+  location_id               = col_skip() #not needed
+)
+
+patent_assignee_table <- vroom(
+  file       = "E:/Uni Hamburg/DataScience/patent_assignee.tsv/patent_assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types_patent_assignee,
+  na         = c("", "NA", "NULL")
+)
+glimpse(patent_assignee_table, eval = TRUE)
+```
+
+### Loading and importing assignee data
+
+```{r}
+col_types_assignee <- list(
+  id                        = col_character(), #assignee_id
+  type                      = col_double(), 
+  name_first                = col_skip(), #not needed
+  name_last                 = col_skip(), #not needed
+  organization              = col_character()
+)
+
+assignee_table <- vroom(
+  file       = "E:/Uni Hamburg/DataScience/assignee.tsv/assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types_assignee,
+  na         = c("", "NA", "NULL")
+)
+setnames(assignee_table, "id", "assignee_id")
+glimpse(assignee_table, eval = TRUE)
+```
+
+### Loading and importing USPC Data - USPTO patent classification at patent issue date
+
+```{r}
+col_types_uspc <- list(
+  uuid                      = col_skip(), #not needed
+  patent_id                 = col_character(),
+  mainclass_id              = col_double(),
+  subclass_id               = col_skip(), #not needed
+  sequence                  = col_skip() #not needed
+)
+
+uspc_table <- vroom(
+  file       = "E:/Uni Hamburg/DataScience/uspc.tsv/uspc.tsv", 
+  delim      = "\t", 
+  col_types  = col_types_uspc,
+  na         = c("", "NA", "NULL")
+)
+glimpse(uspc_table, eval = TRUE)
+```
+
+## Make a data.table out of the imported data
+
+### Patent table
+
+```{r}
+class(patent_table)%>%
+  glimpse(, eval =TRUE)
+setDT(patent_table)
+class(patent_table)%>%
+  glimpse(, eval =TRUE)
+```
+
+### Patent_assignee table
+
+```{r}
+setDT(patent_assignee_table)
+class(patent_assignee_table)%>%
+  glimpse(, eval =TRUE)
+```
+
+### Assignee table
+
+```{r}
+setDT(assignee_table)
+class(assignee_table)%>%
+  glimpse(, eval =TRUE)
+```
+
+### uspc table
+
+```{r}
+setDT(uspc_table)
+class(uspc_table)%>%
+  glimpse(, eval =TRUE)
+```
+
+## Joining data 
+
+### Task 1: Assignee & Patent Assignee
+
+```{r}
+combined_data1 <- merge(x = patent_assignee_table, y = assignee_table, 
+                        by    = "assignee_id", 
+                        all.x = TRUE, 
+                        all.y = TRUE)%>%
+  filter(!is.na(patent_id)) %>%
+  glimpse(, eval = TRUE)
+```
+
+### Task 2: Assignee & Patent Assignee & Patent
+
+```{r}
+combined_data2<- merge(x=combined_data1, y = patent_table,
+                       by    = "patent_id", 
+                       all.x = TRUE, 
+                       all.y = TRUE)%>%
+  filter(!is.na(patent_id))%>%
+  glimpse(, eval = TRUE)
+```
+
+### Task 3: Assignee & Patent Assignee & Patent
+
+```{r}
+combined_data3<- merge(x=combined_data1, y = uspc_table,
+                       by    = "patent_id", 
+                       all.x = TRUE, 
+                       all.y = TRUE)%>%
+  filter(!is.na(patent_id))%>%
+  filter(!is.na(mainclass_id))%>%
+  filter(!is.na(organization))%>%
+  select(type, mainclass_id, organization)%>%
+  glimpse(, eval = TRUE)
+```
+
+## Challenge Tasks
+
+### Task 1: Patent Dominance: What US company / corporation has the most patents? List the 10 US companies with the most assigned/granted patents.
+
+```{r}
+most_patents<-combined_data1 %>% 
+  filter(type == 2)%>%
+  count(organization, sort = T)
+setnames(most_patents, "n", "number of patents")
+```
+
+The top 10 US companies / corporation with the most patents are the following:
+
+```{r results = 'asis'}
+Most<-most_patents[1:10, ]
+knitr::kable(
+  head(Most[,],10), booktabs = TRUE,
+  caption = 'The top 10 innovative companies / corporation in the US with most new patents'
+)
+```
+
+### Task 2: Recent patent activity: What US company had the most patents granted in 2019? List the top 10 companies with the most new granted patents for 2019.
+
+```{r}
+most_patents2019<-combined_data2 %>% 
+  separate(col = date, into = c("year", "month", "day"), sep = "-", convert = T)%>%
+  filter(year == 2019)%>%
+  filter(type == 2)%>%
+  count(organization, sort = T)
+
+setnames(most_patents2019, "n", "number of patents")%>%
+  glimpse(, eval=TRUE)
+```
+
+The top 10 US companies with the most new granted patents for 2019 are the following:
+
+```{r results = 'asis'}
+Top10_2019<-most_patents2019[1:10,]
+knitr::kable(
+  head(Top10_2019[,],10), booktabs = TRUE,
+  caption = 'The top 10 innovative companies in the US with most new granted  patents in 2019'
+)
+``` 
+
+### Task 3: Innovation in Tech: What is the most innovative tech sector? For the top 10 companies (worldwide) with the most patents, what are the top 5 USPTO tech main classes?
+
+```{r}
+USPTO_worldwide<-combined_data3 %>%
+  filter((type == 2) | (type == 3))%>%
+  count(organization, sort = T)
+
+setnames(USPTO_worldwide, "n", "number of patents")%>%
+  glimpse(, eval=TURE)
+
+Top10_worldwide<-USPTO_worldwide[1:10,]
+
+Top_USPTO<- merge(x=Top10_worldwide, y = combined_data3, 
+                  by = "organization",
+                  all.x = TRUE, 
+                  all.y = FALSE)%>%
+  count(mainclass_id, sort = T)
+setnames(Top_USPTO, "n", "USPTO tech main class occurency")%>%
+  glimpse(, eval=TRUE)
+```
+
+The top 10 companies worldwide with the most patents including the top 5 USPTO tech main classes:
+
+```{r results = 'asis'}
+Top10<-head(USPTO_worldwide, 10)
+Top<-head(Top_USPTO, 5)
+knitr::kable(
+  list(Top10, Top),
+  caption = 'The top 10 innovative companies worldwide holding most of the patents (left) and the top 5 USPTO tech main classes (right)'
+)
+```
+
+# Forth Challenge - Visualization
+
+## Preparation
+```{r}
+#Clear the environment and load packages 
+rm(list=ls())#Clear list
+#install.packages("date")
+#install.packages("maps")
+
+#Load libraries
+library(tidyverse)
+library(scales)
+library(lubridate)
+library(date)
+library(maps)
+library(data.table)
+
+#Load data
+covid_data_tbl <- read_csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv")
+``` 
+
+## Task 1: Map the time course of the cumulative Covid-19 cases
+
+### Cases per Countries of Choice
+
+#### Data manipulation
+```{r}
+glimpse(covid_data_tbl, eval=TRUE)
+
+countries_of_interest<-c("Germany","France","Spain","United_Kingdom","United_States_of_America")
+
+Cases_Countries<-covid_data_tbl%>%
+  rename(Country = countriesAndTerritories) %>%
+  filter(year == 2020)%>%
+  filter(month != 12)%>%
+  filter(Country == countries_of_interest)%>%
+  select(month, cases, Country)%>%
+  group_by(Country, month)%>%
+  summarize(Monthly_cases_country = sum(cases))%>%
+  mutate(Cum_Mon_cases_country = cumsum(Monthly_cases_country))%>%
+  glimpse(, eval=TRUE)
+```
+
+#### Data visualization 
+
+```{r results = 'asis'}
+Cases_Countries %>%
+  ggplot(aes(month, Cum_Mon_cases_country,color = Country))+
+  geom_line(aes(color = Country), size = 1) +
+  geom_point(aes(color = Country), size = 3) +
+  scale_x_continuous(breaks = 1:11, labels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November"))+
+  scale_y_continuous(labels = scales::comma_format(scale = 1e-6, 
+                                                    suffix = "Mio."),limits = c(0,3e6)) +
+  theme(axis.text.x=element_text(angle = 60, hjust = 0.95))+
+  labs(
+    title = "Corona Cases in 2020",
+    subtitle = "Continously increasing number of Corona cases in 5 selected countries",
+    x = "Year 2020",
+    y = "Cumulative Covid-19 Cases",
+    caption = str_glue("Data captured from https://opendata.ecdc.europa.eu/covid19/casedistribution")
+  )+
+  geom_label(label =  str_glue(
+    "{max(Cases_Countries$Cum_Mon_cases_country)}"),
+               vjust = 0.25, 
+               nudge_y = -1.5,
+               nudge_x = -1.5,
+               size  =  4,
+               fill  = "white",
+               color = "black",
+               fontface = "italic",
+               data = Cases_Countries%>%
+                 filter(month == "11")%>%
+                 filter(Country == "United_States_of_America")
+  )
+```
+
+### Cases for Continents
+
+#### Data manipulation
+
+```{r}
+Cases_Continents<-covid_data_tbl%>%
+  rename(Continent = continentExp) %>%
+  filter(year == 2020)%>%
+  select(month, cases, Continent)%>%
+  group_by(Continent, month)%>%
+  summarize(Monthly_cases_continent = sum(cases))%>%
+  mutate(Cum_Mon_cases_continent = cumsum(Monthly_cases_continent))
+```
+
+#### Data visualisation 
+
+```{r results = 'asis'}
+Cases_Continents %>%
+  ggplot(aes(month, Cum_Mon_cases_continent, color = Continent))+
+  geom_line(aes(color = Continent), size = 1) +
+  geom_point(aes(color = Continent), size = 3) +
+  scale_x_continuous(breaks = 1:11, labels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November"))+
+  scale_y_continuous(labels = scales::comma_format(scale = 1e-6, 
+                                                   suffix = "Mio.", limits = c(0,30e6))) +
+  theme(axis.text.x=element_text(angle = 60, hjust = 0.95))+
+  labs(
+    title = "Corona Cases in 2020",
+    subtitle = "Continously increasing number of Corona cases per Continents worldwide",
+    x = "Year 2020",
+    y = "Cumulative Covid-19 Cases",
+    caption = str_glue("Data captured from https://opendata.ecdc.europa.eu/covid19/casedistribution")
+  )+
+  geom_label(label =  str_glue(
+    "{max(Cases_Continents$Cum_Mon_cases_continent)}"),
+    vjust = -0.5, 
+    size  =  4,
+    fill  = "white",
+    color = "black",
+    fontface = "italic",
+    data = Cases_Continents%>% filter(month == "11")
+  )
+```
+
+## Task 2:Visualize the distribution of the mortality rate (deaths / population) with geom_map().
+
+### Data Manipulation 
+
+```{r}
+world <- map_data("world")%>%
+  glimpse(,eval=TRUE)
+
+world_short <- world%>%
+  select(long, lat, region)%>%
+  glimpse(,eval=TRUE)
+
+Covid_data<- covid_data_tbl%>% 
+  mutate(across(countriesAndTerritories, str_replace_all, "_", " ")) %>%
+  mutate(countriesAndTerritories = case_when(
+    countriesAndTerritories == "United Kingdom" ~ "UK",
+    countriesAndTerritories == "United States of America" ~ "USA",
+    countriesAndTerritories == "Czechia" ~ "Czech Republic",
+    TRUE ~ countriesAndTerritories
+  ))%>%
+  rename(region = countriesAndTerritories) %>%
+  select(deaths, popData2019, region, geoId)%>%
+  group_by(region)%>%
+  mutate(Mortality_Rate = sum(deaths)/popData2019*1000)%>%
+  select(Mortality_Rate, region)%>%
+  glimpse(,eval=TRUE)
+
+Location<- merge(x = world_short, y = Covid_data,
+                 by = "region",
+                 all.x = T,
+                 all.y = T)%>%
+  glimpse(,eval=TRUE)
+```
+
+### Data visualisation 
+Unfortuantely, there is a mistake in the code which leads to a bad visual output. I did not find my mistake, which makes me display the best I have reached. I tried to not select values from the "world" data as I thought its due to my selection for Location. Unfortunately, I cannot process the data anymore thereafter as its leading to the error: "Fehler: kann Vektor der Größe 1.7 GB nicht allozieren"
+
+```{r results = 'asis'}
+Location%>%
+  ggplot(aes(fill = Mortality_Rate))+
+  geom_map(aes(long, lat, map_id = region), map = world)+
+  scale_fill_viridis_c(option = "plasma", 
+                       trans = "sqrt"
+  )+
+  labs(
+    title = "Mortality Rate worldwide [in Promille]",
+    subtitle = "Mortality rate especially in the United States of America and Southern American countries drastically high",
+    caption = str_glue("Data captured from https://opendata.ecdc.europa.eu/covid19/casedistribution")
+  )
+```
+
+# Feedback
+
+_Gerne möchte ich Ihnen zuletzt ein kurzes Feedback geben. Zunächst einmal habe ich vieles gelernt, was mir auch in anderen Kursen geholfen hat, Aufgaben in R schneller zu bewältigen. 
+Allerdings fand ich insbesondere das Kapitel 3 sehr schwer verständlich für jemanden ohne jegliche Programmierkenntnisse - was laut Kursbeschreibung nicht benötigt war. Ich war bereits kurz davor, den Kurs abzubrechen, habe dann aber mit den Kapiteln 4 und 5 weitergemacht und das dritte Kapitel zunächst übersprungen. Vielleicht könnte dieses genauer beschrieben oder vereinfacht werden. Uns steht selbstverständlich Matterhorn zur Verfügung, allerdings war das Kapitel einfach zu überwältigend mit den vielen neuen Begriffen etc., dass ich gar nicht wusste, nach was ich fragen sollte. 
+Auch das Kapitel 1 mit der Installation ist teilweise schwer verständlich. Ich wusste zum Beispiel noch nicht mal was "mein Terminal" ist und hatte so bei der Installation Probleme. 
+Im Kapitel 4 war ich gezwungen Matlab zu deinstallieren aufgrund der großen Datenmengen und alles weitere mit R auf einer externen Festplatte laufen zu lassen. Natürlich liegt das teilweise auch an meinem etwas alten Laptop, andererseits wäre es wohl einfacher gewesen, die verkleinerten / gekürzten Daten direkt zur Verfügung zu stellen. Man hat hier schon viel Zeit verloren mit dem Warten auf Ergebnisse - das mag zwar realitätsnaher sein, aber ob der Code funktioniert oder nicht, erkennt man ja auch mit weniger Daten. 
+Letztlich habe ich fast alle Aufgaben gemeistert - allerdings mit nicht unerheblichem Zeitaufwand. Das war einer der Gründe, weshalb ich mich zuletzt auch aus dem Nachfolgekurs "Machine Learning" wieder ausgetragen habe. Vielleicht gehe ich das Thema in einem zukünftigen Semester nochmal an. Vielen Dank auch für die Hilfe in Mattermost - oft sind es wahrhaft Kleinigkeiten, die einem die Zeit stehlen, weil man einfach nicht den Fehler findet. 
+Damit eine schöne Weihnachtszeit! 
+Kristin Schüler_
